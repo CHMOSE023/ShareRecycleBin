@@ -64,7 +64,8 @@ namespace ShareRecycleBin
                 if (MoveFileW(lpShadow, PathHelper.ToLP(finalPath)))
                 {
                     Log.Information("[Recycled] {Path}", finalPath);
-                    ApplySecurity(finalPath, isDir);
+                    // 文件删除后, 权限不变
+                    //ApplySecurity(finalPath, isDir);
                 }
             }
         }
