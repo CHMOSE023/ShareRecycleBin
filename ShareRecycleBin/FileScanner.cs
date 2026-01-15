@@ -68,8 +68,8 @@ namespace ShareRecycleBin
                         }
                     }
 
-                    // 性能调优：每扫描 500 个文件喘口气，降低对生产环境磁盘的压力
-                    if (scanCount % 500 == 0) Thread.Sleep(50);
+                    // 性能调优：每扫描 100 个文件喘口气，降低对生产环境磁盘的压力
+                    if (scanCount % 100 == 0) Thread.Sleep(100);
                 }
             }
             catch (UnauthorizedAccessException)
