@@ -47,12 +47,19 @@ namespace ShareRecycleBin
                 _monitor.Start();
 
                 _scanner = new FileScanner(ShareRoot, ShadowRoot,WhiteList, _syncQueue);
+
                 Task.Run(() => _scanner.Start(_cts.Token));
 
                 // 启动 4 个处理线程
-                for (int i = 0; i < 4; i++) StartWorkerThread();
+                for (int i = 0; i < 4; i++)
+                {
+                    StartWorkerThread();
+                }
 
-                if (EnableCleanup) Task.Run(() => CleanupLoop(_cts.Token));
+                if (EnableCleanup)
+                {
+                    Task.Run(() => CleanupLoop(_cts.Token));
+                }
 
                 Log.Information("SMBRecycleBinPro 服务已就绪。");
             }
@@ -112,10 +119,10 @@ namespace ShareRecycleBin
             RecycleRoot = Path.IsPathRooted(recyclePath) ? recyclePath : Path.GetFullPath(Path.Combine(baseDir, recyclePath));
 
             // 4. 读取其他数值型配置
-            EnableCleanup = bool.Parse(ConfigurationManager.AppSettings["EnableCleanup"] ?? "false");
-            RecycleDays = int.Parse(ConfigurationManager.AppSettings["RecycleDays"] ?? "30");
+            EnableCleanup = bool.Parse(ConfigurationManager.AppSettings["EnableCleanup"] ?? "true");
+            RecycleDays = int.Parse(ConfigurationManager.AppSettings["RecycleDays"] ?? "3");
             BufferSize = int.Parse(ConfigurationManager.AppSettings["WatcherBufferSizeKB"] ?? "64");
-            WhiteList = new HashSet<string>((ConfigurationManager.AppSettings["WhiteList"] ?? "dwg,dxf,doc,docx,xls,xlsx,ppt,pptx,pdf,txt,zip,rar,7z,jpg,png")
+            WhiteList = new HashSet<string>((ConfigurationManager.AppSettings["WhiteList"] ?? "dwg,dxf,doc,docx,xls,xlsx,ppt,pptx")
                         .Split(',')
                         .Select(x => x.Trim().ToLower()));
 
@@ -123,7 +130,8 @@ namespace ShareRecycleBin
             if (string.IsNullOrEmpty(ShareRoot) || string.IsNullOrEmpty(ShadowRoot))
                 throw new Exception("配置路径不能为空");
 
-            Log.Information("配置加载成功: Share={Share}, Shadow={Shadow}, Recycle={Recycle}",  ShareRoot, ShadowRoot, RecycleRoot);
+            Log.Information("配置信息: ShareRoot={Share}, ShadowRoot={Shadow}, RecycleRoot={Recycle}, EnableCleanup={EnableCleanup}, RecycleDays={RecycleDays}",  ShareRoot, ShadowRoot, RecycleRoot, EnableCleanup, RecycleDays);
+            Log.Information("配置信息: WhiteList={WhiteList} ,BufferSize={BufferSize}", WhiteList, BufferSize);
         }
 
         private async Task CleanupLoop(CancellationToken token)
@@ -132,12 +140,44 @@ namespace ShareRecycleBin
             {
                 try
                 {
-                    var threshold = DateTime.Now.AddDays(-RecycleDays);
-                    foreach (var f in Directory.EnumerateFiles(PathHelper.ToLP(RecycleRoot), "*", SearchOption.AllDirectories))
-                        if (File.GetCreationTime(PathHelper.ToLP(f)) < threshold) File.Delete(PathHelper.ToLP(f));
+                    if (!Directory.Exists(RecycleRoot))
+                        continue;
+
+                    // 删除所有子目录
+                    foreach (var dir in Directory.GetDirectories(RecycleRoot))
+                    {
+                        try
+                        {
+                            Directory.Delete(dir, recursive: true);
+                            Log.Information($"删除目录: {dir}");
+                        }
+                        catch (Exception ex)
+                        {
+                            Log.Warning(ex, $"删除目录失败: {dir}");
+                        }
+                    }
+
+                    // 删除根目录下的零散文件
+                    foreach (var file in Directory.GetFiles(RecycleRoot))
+                    {
+                        try
+                        {
+                            File.Delete(file);
+                            Log.Information($"删除文件: {file}");
+                        }
+                        catch (Exception ex)
+                        {
+                            Log.Warning(ex, $"删除文件失败: {file}");
+                        }
+                    }
                 }
-                catch { }
-                await Task.Delay(TimeSpan.FromHours(12), token);
+                catch (Exception ex)
+                {
+                    Log.Error(ex, "清空回收站错误");
+                }
+
+                // 每 3 天执行一次“整仓清空”
+                await Task.Delay(TimeSpan.FromDays(RecycleDays), token);
             }
         }
 
